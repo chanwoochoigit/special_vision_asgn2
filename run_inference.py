@@ -163,6 +163,7 @@ class SDXLModel(BenchmarkModel):
         return sum(p.numel() for p in self.model_components.unet.parameters()) / 1e6
 
 
+# --- MODIFIED InfinityModel Class ---
 class InfinityModel(BenchmarkModel):
     """Benchmark class for FoundationVision/Infinity."""
 
@@ -186,7 +187,6 @@ class InfinityModel(BenchmarkModel):
             )
             from infinity.utils.dynamic_resolution import dynamic_resolution_h_w
         except ImportError as e:
-            print(e)
             raise ImportError(
                 "Failed to import from Infinity repo. Ensure it is cloned correctly."
             ) from e
@@ -239,9 +239,16 @@ class InfinityModel(BenchmarkModel):
         }
 
     def generate(self, prompt: str) -> Image.Image:
+        """
+        --- NEW DEBUGGING APPROACH ---
+        This method now calls gen_one_img with the minimum required arguments,
+        allowing the function to use its own defaults for optional parameters.
+        This helps isolate the source of the TypeError.
+        """
         comps = self.model_components
         _n_scales = len(comps["scale_schedule"])
 
+        # Call with only the essential arguments
         img_tensor = comps["gen_one_img"](
             comps["model"],
             comps["vae"],
@@ -250,12 +257,6 @@ class InfinityModel(BenchmarkModel):
             prompt,
             cfg_list=[3.0] * _n_scales,
             tau_list=[1.0] * _n_scales,
-            top_k=900,
-            top_p=0.97,
-            cfg_sc=3,
-            cfg_insertion_layer=-5,
-            vae_type=[0],
-            sampling_per_bits=1,
             scale_schedule=comps["scale_schedule"],
         )
         return Image.fromarray(img_tensor)
@@ -371,9 +372,6 @@ def save_comprehensive_report(results: Dict[str, Dict], num_samples: int):
     print(f"\n📊 Comprehensive JSON report saved to: {json_path}")
 
 
-# --- NEW: Functions to save and load intermediate results ---
-
-
 def save_model_results(model_name: str, results: Dict[str, Any], num_samples: int):
     """Saves a model's benchmark results to a JSON file."""
     results_dir = os.path.join(OUTPUT_BASE_DIR, "intermediate_results")
@@ -408,9 +406,6 @@ def load_model_results(model_name: str) -> Dict[str, Any]:
     return data["results"]
 
 
-# --- MODIFIED: Main Execution with intermediate result handling ---
-
-
 def main():
     """Main execution function with memory-efficient sequential processing."""
     seed_everything(42)
@@ -420,12 +415,10 @@ def main():
     images, captions, num_samples = load_gundam_dataset()
     all_results = {}
 
-    # Define paths for intermediate results
     results_dir = os.path.join(OUTPUT_BASE_DIR, "intermediate_results")
     sdxl_results_path = os.path.join(results_dir, "SDXL_results.json")
     infinity_results_path = os.path.join(results_dir, "Infinity_results.json")
 
-    # --- Benchmark SDXL (or load if exists) ---
     if os.path.exists(sdxl_results_path):
         sdxl_results = load_model_results("SDXL")
     else:
@@ -444,7 +437,6 @@ def main():
     if sdxl_results:
         all_results["SDXL"] = sdxl_results
 
-    # --- Benchmark Infinity (or load if exists) ---
     if INCLUDE_INFINITY:
         if os.path.exists(infinity_results_path):
             infinity_results = load_model_results("Infinity")
@@ -469,7 +461,6 @@ def main():
     if infinity_results:
         all_results["Infinity"] = infinity_results
 
-    # --- Final Reporting ---
     if "SDXL" in all_results and "Infinity" in all_results:
         print_results(all_results["SDXL"], all_results["Infinity"], "Infinity")
     elif "SDXL" in all_results:
