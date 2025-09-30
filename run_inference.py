@@ -2,6 +2,7 @@
 """
 Refactored, standalone benchmark script for SDXL vs. Infinity performance comparison.
 Measures model size, inference time, and FID score on the Gundam dataset.
+Includes logic to save/load intermediate results to manage memory constraints.
 """
 
 import time
@@ -23,7 +24,7 @@ from torchvision import transforms, models
 from scipy.linalg import sqrtm
 
 # --- Configuration ---
-NUM_SAMPLES = 500  # Set to None to use the entire dataset
+NUM_SAMPLES = 100  # Set to None to use the entire dataset
 IMAGE_SIZE = 512
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 OUTPUT_BASE_DIR = "local_repo"
@@ -347,7 +348,7 @@ def print_results(
 
 
 def save_comprehensive_report(results: Dict[str, Dict], num_samples: int):
-    """Saves a comprehensive JSON and TXT report of the final results."""
+    """Saves a comprehensive JSON report of the final results."""
     report_dir = os.path.join(OUTPUT_BASE_DIR, "reports")
     os.makedirs(report_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -369,7 +370,44 @@ def save_comprehensive_report(results: Dict[str, Dict], num_samples: int):
     print(f"\n📊 Comprehensive JSON report saved to: {json_path}")
 
 
-# --- Main Execution ---
+# --- NEW: Functions to save and load intermediate results ---
+
+
+def save_model_results(model_name: str, results: Dict[str, Any], num_samples: int):
+    """Saves a model's benchmark results to a JSON file."""
+    results_dir = os.path.join(OUTPUT_BASE_DIR, "intermediate_results")
+    os.makedirs(results_dir, exist_ok=True)
+    file_path = os.path.join(results_dir, f"{model_name}_results.json")
+
+    data_to_save = {
+        "model_name": model_name,
+        "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
+        "configuration": {
+            "num_samples": num_samples,
+            "image_size": IMAGE_SIZE,
+            "device": DEVICE,
+        },
+        "results": results,
+    }
+
+    with open(file_path, "w") as f:
+        json.dump(data_to_save, f, indent=2)
+    print(f"✅ Saved intermediate results for {model_name} to {file_path}")
+
+
+def load_model_results(model_name: str) -> Dict[str, Any]:
+    """Loads a model's benchmark results from a JSON file."""
+    results_dir = os.path.join(OUTPUT_BASE_DIR, "intermediate_results")
+    file_path = os.path.join(results_dir, f"{model_name}_results.json")
+
+    with open(file_path, "r") as f:
+        data = json.load(f)
+
+    print(f"✅ Loaded intermediate results for {model_name} from {file_path}")
+    return data["results"]
+
+
+# --- MODIFIED: Main Execution with intermediate result handling ---
 
 
 def main():
@@ -381,42 +419,59 @@ def main():
     images, captions, num_samples = load_gundam_dataset()
     all_results = {}
 
-    # --- Benchmark SDXL ---
-    try:
-        sdxl_model = SDXLModel()
-        sdxl_results = run_benchmark(sdxl_model, "SDXL", images, captions)
-        all_results["SDXL"] = sdxl_results
-        del sdxl_model
-        if DEVICE == "cuda":
-            torch.cuda.empty_cache()
-        print("🧹 Cleared SDXL from memory")
-    except Exception as e:
-        print(f"❌ Failed to benchmark SDXL: {e}")
-        sdxl_results = None
+    # Define paths for intermediate results
+    results_dir = os.path.join(OUTPUT_BASE_DIR, "intermediate_results")
+    sdxl_results_path = os.path.join(results_dir, "SDXL_results.json")
+    infinity_results_path = os.path.join(results_dir, "Infinity_results.json")
 
-    # --- Benchmark Infinity ---
-    if INCLUDE_INFINITY:
+    # --- Benchmark SDXL (or load if exists) ---
+    if os.path.exists(sdxl_results_path):
+        sdxl_results = load_model_results("SDXL")
+    else:
         try:
-            infinity_model = InfinityModel()
-            infinity_results = run_benchmark(
-                infinity_model, "Infinity", images, captions
-            )
-            all_results["Infinity"] = infinity_results
-            del infinity_model
+            sdxl_model = SDXLModel()
+            sdxl_results = run_benchmark(sdxl_model, "SDXL", images, captions)
+            save_model_results("SDXL", sdxl_results, num_samples)
+            del sdxl_model
             if DEVICE == "cuda":
                 torch.cuda.empty_cache()
-            print("🧹 Cleared Infinity from memory")
+            print("🧹 Cleared SDXL from memory")
         except Exception as e:
-            print(f"❌ Failed to benchmark Infinity: {e}")
-            infinity_results = None
+            print(f"❌ Failed to benchmark SDXL: {e}")
+            sdxl_results = None
+
+    if sdxl_results:
+        all_results["SDXL"] = sdxl_results
+
+    # --- Benchmark Infinity (or load if exists) ---
+    if INCLUDE_INFINITY:
+        if os.path.exists(infinity_results_path):
+            infinity_results = load_model_results("Infinity")
+        else:
+            try:
+                infinity_model = InfinityModel()
+                infinity_results = run_benchmark(
+                    infinity_model, "Infinity", images, captions
+                )
+                save_model_results("Infinity", infinity_results, num_samples)
+                del infinity_model
+                if DEVICE == "cuda":
+                    torch.cuda.empty_cache()
+                print("🧹 Cleared Infinity from memory")
+            except Exception as e:
+                print(f"❌ Failed to benchmark Infinity: {e}")
+                infinity_results = None
     else:
         print("\n⚠️ Infinity repo not found, skipping Infinity benchmark.")
         infinity_results = None
 
+    if infinity_results:
+        all_results["Infinity"] = infinity_results
+
     # --- Final Reporting ---
-    if sdxl_results and infinity_results:
-        print_results(sdxl_results, infinity_results, "Infinity")
-    elif sdxl_results:
+    if "SDXL" in all_results and "Infinity" in all_results:
+        print_results(all_results["SDXL"], all_results["Infinity"], "Infinity")
+    elif "SDXL" in all_results:
         print("\nOnly SDXL results are available.")
 
     if all_results:
