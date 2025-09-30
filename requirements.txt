@@ -1,0 +1,27 @@
+# Core stack
+numpy
+scipy
+pandas
+
+# Image / vision utilities
+Pillow
+opencv-python
+
+# PyTorch and vision models
+torch>=2.5.1
+torchvision
+timm
+
+# Hugging Face / diffusion / datasets
+transformers
+datasets
+accelerate
+diffusers
+
+# Utilities
+einops
+pyyaml
+typed-argument-parser
+
+# rest
+imageio
