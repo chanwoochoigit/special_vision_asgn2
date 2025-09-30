@@ -254,7 +254,7 @@ class InfinityModel(BenchmarkModel):
             top_p=0.97,
             cfg_sc=3,
             cfg_insertion_layer=-5,
-            vae_type=0,
+            vae_type=[0],
             sampling_per_bits=1,
             scale_schedule=comps["scale_schedule"],
         )
