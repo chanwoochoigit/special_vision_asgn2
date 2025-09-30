@@ -186,6 +186,7 @@ class InfinityModel(BenchmarkModel):
             )
             from infinity.utils.dynamic_resolution import dynamic_resolution_h_w
         except ImportError as e:
+            print(e)
             raise ImportError(
                 "Failed to import from Infinity repo. Ensure it is cloned correctly."
             ) from e
