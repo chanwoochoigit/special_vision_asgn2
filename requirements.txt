@@ -1,27 +1,23 @@
-# Core stack
+# Core ML/DL Framework
+torch
+torchvision
+
+# Hugging Face ecosystem
+datasets
+diffusers
+transformers
+accelerate
+sentencepiece
+
+# Scientific computing and Image Processing
 numpy
 scipy
-pandas
-
-# Image / vision utilities
 Pillow
-opencv-python
 
-# PyTorch and vision models
-torch>=2.5.1
-torchvision
+# Dependencies for Infinity Model
+einops
+omegaconf
 timm
 
-# Hugging Face / diffusion / datasets
-transformers
-datasets
-accelerate
-diffusers
-
-# Utilities
-einops
-pyyaml
-typed-argument-parser
-
-# rest
-imageio
+# High-performance attention (requires specific hardware/setup)
+flash-attn
