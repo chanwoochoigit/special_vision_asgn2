@@ -26,7 +26,7 @@ from scipy.linalg import sqrtm
 NUM_SAMPLES = 500  # Set to None to use the entire dataset
 IMAGE_SIZE = 512
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-OUTPUT_BASE_DIR = "local_repo_refactored"
+OUTPUT_BASE_DIR = "local_repo"
 INFINITY_REPO_DIR = os.path.join(os.path.dirname(__file__), "Infinity")
 INCLUDE_INFINITY = os.path.isdir(
     INFINITY_REPO_DIR
