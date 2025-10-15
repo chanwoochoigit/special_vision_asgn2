@@ -4,10 +4,15 @@ torchvision
 
 # Hugging Face ecosystem
 datasets
-diffusers
-transformers
-accelerate
+# pin to a stable version that works with our training scripts
+transformers>=4.41.0
+accelerate>=0.33.0
 sentencepiece
+huggingface_hub
+
+# diffusers for PixArt-Sigma
+diffusers==0.30.0
+safetensors
 
 # Scientific computing and Image Processing
 numpy
@@ -19,5 +24,7 @@ einops
 omegaconf
 timm
 
-# High-performance attention (requires specific hardware/setup)
-flash-attn
+peft
+# High-performance attention (optional; leave unpinned)
+# xformers
+# flash-attn

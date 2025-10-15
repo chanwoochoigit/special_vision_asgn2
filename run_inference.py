@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""
-Refactored, standalone benchmark script for SDXL vs. Infinity performance comparison.
-Measures model size, inference time, and FID score on the Gundam dataset.
-Includes logic to save/load intermediate results to manage memory constraints.
-Uses a direct functional approach for Infinity to resolve persistent TypeError.
-"""
 
 import time
 import os
@@ -13,24 +7,33 @@ import random
 import json
 from datetime import datetime
 from typing import List, Tuple, Dict, Any
-from abc import ABC, abstractmethod
+import warnings
 
 import torch
 import torch.nn as nn
 import numpy as np
 from PIL import Image
 from datasets import load_dataset
-from diffusers import DiffusionPipeline
+from diffusers import DiffusionPipeline, Transformer2DModel, PixArtSigmaPipeline
 from torchvision import transforms, models
 from scipy.linalg import sqrtm
 
 # --- Configuration ---
-NUM_SAMPLES = 100
+NUM_SAMPLES = None
 IMAGE_SIZE = 512
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 OUTPUT_BASE_DIR = "local_repo"
-INFINITY_REPO_DIR = os.path.join(os.path.dirname(__file__), "Infinity")
-INCLUDE_INFINITY = os.path.isdir(INFINITY_REPO_DIR)
+PIXART_REPO_DIR = os.path.join(os.path.dirname(__file__), "PixArt-sigma")
+INCLUDE_PIXART = os.path.isdir(PIXART_REPO_DIR)
+
+# Runtime toggles (default: run only PixArt)
+SKIP_SDXL = os.getenv("SKIP_SDXL", "1") == "1"
+RUN_PIXART = os.getenv("RUN_PIXART", "1") == "1"
+
+# Optional override for number of samples via environment
+_env_num = os.getenv("NUM_SAMPLES")
+if _env_num is not None and _env_num.strip() != "":
+    NUM_SAMPLES = int(_env_num)
 
 
 # --- Utility Functions ---
@@ -97,6 +100,39 @@ def calculate_fid(
     return fid
 
 
+# --- PixArt-Sigma Model Class ---
+class PixArtSigmaModel:
+    def __init__(self, model_id: str = "PixArt-alpha/PixArt-Sigma-XL-2-512-MS"):
+        self.model_id = model_id
+        self.pipe = self.load()
+
+    def load(self) -> Any:
+        print("Loading PixArt-Sigma model…")
+        # Transformer weights
+        transformer = Transformer2DModel.from_pretrained(
+            "PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
+            subfolder="transformer",
+            torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+            use_safetensors=True,
+        )
+        # Base VAE + T5 package
+        vae_t5_repo = "PixArt-alpha/pixart_sigma_sdxlvae_T5_diffusers"
+        pipe = PixArtSigmaPipeline.from_pretrained(
+            vae_t5_repo,
+            transformer=transformer,
+            torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+            use_safetensors=True,
+        )
+        return pipe.to(DEVICE)
+
+    def generate(self, prompt: str) -> Image.Image:
+        result = self.pipe(prompt, height=IMAGE_SIZE, width=IMAGE_SIZE)
+        return result.images[0]
+
+    def count_params(self) -> float:
+        return sum(p.numel() for p in self.pipe.transformer.parameters()) / 1e6
+
+
 # --- SDXL Model Class (Unchanged) ---
 class SDXLModel:
     def __init__(self):
@@ -124,135 +160,6 @@ class SDXLModel:
 
     def count_params(self) -> float:
         return sum(p.numel() for p in self.model_components.unet.parameters()) / 1e6
-
-
-# --- NEW: Function-based approach for Infinity ---
-def load_infinity_components() -> Dict[str, Any]:
-    """Loads all Infinity components into a dictionary, mimicking the original script."""
-    print("Loading Infinity model...")
-    if not os.path.isdir(INFINITY_REPO_DIR):
-        raise FileNotFoundError("Infinity repo not found.")
-    if INFINITY_REPO_DIR not in sys.path:
-        sys.path.append(INFINITY_REPO_DIR)
-
-    from types import SimpleNamespace
-    from tools.run_infinity import (
-        load_tokenizer as inf_load_tokenizer,
-        load_visual_tokenizer as inf_load_vae,
-        load_transformer as inf_load_transformer,
-        gen_one_img,
-    )
-    from infinity.utils.dynamic_resolution import dynamic_resolution_h_w
-
-    weights_dir = os.path.join("local_repo", "Infinity")
-    model_path = os.path.join(weights_dir, "infinity_2b_reg.pth")
-    vae_path = os.path.join(weights_dir, "infinity_vae_d32reg.pth")
-
-    if not os.path.exists(model_path) or not os.path.exists(vae_path):
-        raise FileNotFoundError(f"Missing Infinity weights in {weights_dir}")
-
-    args = SimpleNamespace(
-        pn="0.25M",
-        model_type="infinity_2b",
-        vae_type=32,
-        vae_path=vae_path,
-        model_path=model_path,
-        rope2d_each_sa_layer=1,
-        rope2d_normalized_by_hw=2,
-        use_scale_schedule_embedding=0,
-        use_bit_label=1,
-        add_lvl_embeding_only_first_block=0,
-        text_channels=2048,
-        apply_spatial_patchify=0,
-        use_flex_attn=0,
-        bf16=1,
-        checkpoint_type="torch",
-        cache_dir="/dev/shm",
-        enable_model_cache=0,
-        sampling_per_bits=1,
-        text_encoder_ckpt="google/flan-t5-xl",
-    )
-
-    text_tokenizer, text_encoder = inf_load_tokenizer(t5_path=args.text_encoder_ckpt)
-    vae = inf_load_vae(args)
-    infinity_model = inf_load_transformer(vae, args)
-    scale_schedule = [
-        (1, h, w) for (_, h, w) in dynamic_resolution_h_w[1.0][args.pn]["scales"]
-    ]
-
-    return {
-        "model": infinity_model,
-        "vae": vae,
-        "text_tokenizer": text_tokenizer,
-        "text_encoder": text_encoder,
-        "scale_schedule": scale_schedule,
-        "gen_one_img": gen_one_img,
-    }
-
-
-def run_benchmark_infinity(
-    components: Dict[str, Any], images: List[Image.Image], captions: List[str]
-) -> Dict[str, Any]:
-    """Runs the benchmark specifically for the Infinity model components."""
-    generated_images = []
-    inference_times = []
-    output_dir = os.path.join(OUTPUT_BASE_DIR, "Infinity", "output")
-    os.makedirs(output_dir, exist_ok=True)
-
-    print(f"\n{'='*20} Benchmarking Infinity {'='*20}")
-    print(f"Saving generated images to: {output_dir}")
-    overall_start_time = time.time()
-
-    gen_one_img = components["gen_one_img"]
-    _n_scales = len(components["scale_schedule"])
-
-    with torch.no_grad():
-        for i, caption in enumerate(captions):
-            iter_start = time.time()
-            # Direct call, mirroring the original script's logic
-            img_tensor = gen_one_img(
-                components["model"],
-                components["vae"],
-                components["text_tokenizer"],
-                components["text_encoder"],
-                caption,
-                cfg_list=[3.0] * _n_scales,
-                tau_list=[1.0] * _n_scales,
-                top_k=900,
-                top_p=0.97,
-                cfg_sc=3,
-                cfg_insertion_layer=-5,
-                vae_type=0,
-                sampling_per_bits=1,  # Using original parameters that worked
-                scale_schedule=components["scale_schedule"],
-            )
-            gen_img = Image.fromarray(img_tensor)
-            iter_end = time.time()
-
-            inference_times.append(iter_end - iter_start)
-            generated_images.append(gen_img)
-            gen_img.save(os.path.join(output_dir, f"{i:05d}.png"))
-
-            if (i + 1) % 100 == 0:
-                print(
-                    f"  Processed {i + 1}/{len(captions)} samples (avg: {np.mean(inference_times):.3f}s/image)"
-                )
-
-    total_inference_time = time.time() - overall_start_time
-    fid_score = calculate_fid(images, generated_images)
-
-    results = {
-        "model_size": sum(p.numel() for p in components["model"].parameters()) / 1e6,
-        "avg_inference_time": np.mean(inference_times),
-        "std_inference_time": np.std(inference_times),
-        "min_inference_time": np.min(inference_times),
-        "max_inference_time": np.max(inference_times),
-        "total_inference_time": total_inference_time,
-        "throughput": len(captions) / total_inference_time,
-        "fid_score": fid_score,
-    }
-    print(f"✅ Infinity benchmark complete. Total time: {total_inference_time:.2f}s")
-    return results
 
 
 # --- Reporting and Result Handling ---
@@ -322,6 +229,9 @@ def load_model_results(model_name: str) -> Dict[str, Any]:
 
 # --- Main Execution ---
 def main():
+    # Suppress FutureWarning messages from libraries to clean up the output
+    warnings.filterwarnings("ignore", category=FutureWarning)
+
     seed_everything(42)
     print(f"Using device: {DEVICE}\n" + "=" * 80)
     images, captions, num_samples = load_gundam_dataset()
@@ -329,65 +239,62 @@ def main():
 
     results_dir = os.path.join(OUTPUT_BASE_DIR, "intermediate_results")
     sdxl_results_path = os.path.join(results_dir, "SDXL_results.json")
-    infinity_results_path = os.path.join(results_dir, "Infinity_results.json")
+    pixart_results_path = os.path.join(results_dir, "PixArt_results.json")
 
-    # --- Benchmark SDXL ---
-    if os.path.exists(sdxl_results_path):
-        sdxl_results = load_model_results("SDXL")
-    else:
-        try:
-            # Note: run_benchmark is now only used for SDXL
-            sdxl_model = SDXLModel()
-            sdxl_results = run_benchmark_sdxl(
-                sdxl_model, images, captions
-            )  # A simple wrapper would be cleaner
-            save_model_results("SDXL", sdxl_results, num_samples)
-            del sdxl_model
-            if DEVICE == "cuda":
-                torch.cuda.empty_cache()
-            print("🧹 Cleared SDXL from memory")
-        except Exception as e:
-            print(f"❌ Failed to benchmark SDXL: {e}")
-            sdxl_results = None
-    if sdxl_results:
-        all_results["SDXL"] = sdxl_results
-
-    # --- Benchmark Infinity ---
-    if INCLUDE_INFINITY:
-        if os.path.exists(infinity_results_path):
-            infinity_results = load_model_results("Infinity")
+    # --- Benchmark SDXL (optional) ---
+    sdxl_results = None
+    if not SKIP_SDXL:
+        if os.path.exists(sdxl_results_path):
+            sdxl_results = load_model_results("SDXL")
         else:
             try:
-                infinity_components = load_infinity_components()
-                infinity_results = run_benchmark_infinity(
-                    infinity_components, images, captions
-                )
-                save_model_results("Infinity", infinity_results, num_samples)
-                del infinity_components
+                sdxl_model = SDXLModel()
+                sdxl_results = run_benchmark_sdxl(sdxl_model, images, captions)
+                save_model_results("SDXL", sdxl_results, num_samples)
+                del sdxl_model
                 if DEVICE == "cuda":
                     torch.cuda.empty_cache()
-                print("🧹 Cleared Infinity from memory")
+                print("🧹 Cleared SDXL from memory")
             except Exception as e:
-                print(f"❌ Failed to benchmark Infinity: {e}")
-                infinity_results = None
+                print(f"❌ Failed to benchmark SDXL: {e}")
+                sdxl_results = None
+        if sdxl_results:
+            all_results["SDXL"] = sdxl_results
+
+    # --- Benchmark PixArt-Sigma (requested) ---
+    pixart_results = None
+    if RUN_PIXART and INCLUDE_PIXART:
+        if os.path.exists(pixart_results_path):
+            pixart_results = load_model_results("PixArt")
+        else:
+            try:
+                pixart_model = PixArtSigmaModel()
+                pixart_results = run_benchmark_pixart(pixart_model, images, captions)
+                save_model_results("PixArt", pixart_results, num_samples)
+                del pixart_model
+                if DEVICE == "cuda":
+                    torch.cuda.empty_cache()
+                print("🧹 Cleared PixArt-Sigma from memory")
+            except Exception as e:
+                print(f"❌ Failed to benchmark PixArt-Sigma: {e}")
+                pixart_results = None
+        if pixart_results:
+            all_results["PixArt"] = pixart_results
     else:
-        print("\n⚠️ Infinity repo not found, skipping Infinity benchmark.")
-        infinity_results = None
-    if infinity_results:
-        all_results["Infinity"] = infinity_results
+        if not INCLUDE_PIXART:
+            print("\n⚠️ PixArt-sigma repo not found, skipping PixArt benchmark.")
 
     # --- Final Reporting ---
-    if "SDXL" in all_results and "Infinity" in all_results:
-        print_results(all_results["SDXL"], all_results["Infinity"], "Infinity")
-    elif "SDXL" in all_results:
-        print("\nOnly SDXL results are available.")
+    if "PixArt" in all_results:
+        # If SDXL present, print comparison, else just print PixArt summary via report saving
+        pass
 
     if all_results:
         save_comprehensive_report(all_results, num_samples)
     print("\n🎉 Benchmark completed successfully!")
 
 
-# Helper wrapper for SDXL to keep the main logic clean
+# Helper wrapper for SDXL
 def run_benchmark_sdxl(
     model: SDXLModel, images: List[Image.Image], captions: List[str]
 ) -> Dict[str, Any]:
@@ -427,6 +334,59 @@ def run_benchmark_sdxl(
         "fid_score": fid_score,
     }
     print(f"✅ SDXL benchmark complete. Total time: {total_inference_time:.2f}s")
+    return results
+
+
+# Helper wrapper for PixArt-Sigma
+def run_benchmark_pixart(
+    model: PixArtSigmaModel, images: List[Image.Image], captions: List[str]
+) -> Dict[str, Any]:
+    generated_images = []
+    inference_times = []
+    output_dir = os.path.join(OUTPUT_BASE_DIR, "PixArt", "output")
+    input_dir = os.path.join(OUTPUT_BASE_DIR, "PixArt", "input")
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(input_dir, exist_ok=True)
+
+    print(f"\n{'='*20} Benchmarking PixArt-Sigma {'='*20}")
+    print(f"Saving generated images to: {output_dir}")
+    overall_start_time = time.time()
+
+    with torch.no_grad():
+        for i, caption in enumerate(captions):
+            iter_start = time.time()
+            gen_img = model.generate(prompt=caption)
+            iter_end = time.time()
+            inference_times.append(iter_end - iter_start)
+            generated_images.append(gen_img)
+            gen_img.save(os.path.join(output_dir, f"{i:05d}.png"))
+
+            # Save corresponding input image and caption for traceability
+            images[i].save(os.path.join(input_dir, f"{i:05d}_input.png"))
+
+            with open(os.path.join(input_dir, f"{i:05d}_caption.txt"), "w") as cf:
+                cf.write(str(caption))
+            if (i + 1) % 100 == 0:
+                print(
+                    f"  Processed {i + 1}/{len(captions)} samples (avg: {np.mean(inference_times):.3f}s/image)"
+                )
+
+    total_inference_time = time.time() - overall_start_time
+    fid_score = calculate_fid(images, generated_images)
+
+    results = {
+        "model_size": model.count_params(),
+        "avg_inference_time": np.mean(inference_times),
+        "std_inference_time": np.std(inference_times),
+        "min_inference_time": np.min(inference_times),
+        "max_inference_time": np.max(inference_times),
+        "total_inference_time": total_inference_time,
+        "throughput": len(captions) / total_inference_time,
+        "fid_score": fid_score,
+    }
+    print(
+        f"✅ PixArt-Sigma benchmark complete. Total time: {total_inference_time:.2f}s"
+    )
     return results
 
 

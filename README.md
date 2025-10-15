@@ -20,7 +20,20 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-python stuff.py
+# run inference first; this will generate outputs
+NUM_SAMPLES=100 SKIP_SDXL=1 SKIP_INFINITY=1 RUN_PIXART=1 python3 run_inference.py
+
+### unified bash script ###
+# backfill (get Gundam input data from generated outputs)
+# Generate metadata.jsonl to package it as PixArt input
+# Clean conflicting packages
+# Install training dependencies 
+# Verify training environment
+# Building combined PixArt base
+# Launch LoRA training
+bash scripts/fine_tune_from_inference.sh
+# after training
+NUM_SAMPLES=1000 SKIP_SDXL=1 SKIP_INFINITY=1 RUN_PIXART=1 python3 run_inference.py
 ```
 
 ## Output
