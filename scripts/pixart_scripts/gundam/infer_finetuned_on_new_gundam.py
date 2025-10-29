@@ -1,6 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 import argparse
 from pathlib import Path
+import time
+import json
 
 import torch
 from datasets import load_dataset
@@ -72,13 +74,21 @@ def main():
     start = min(args.skip_first_n, len(ds))
     end = min(start + args.num_samples, len(ds))
 
+    timings = []
     for i in range(start, end):
         cap = ds[i]["text"]
+        t0 = time.time()
         img = pipe(cap, height=512, width=512, num_inference_steps=20).images[0]
+        t1 = time.time()
         img.save(out / f"{i:05d}.png")
         (out / f"{i:05d}_caption.txt").write_text(cap)
+        timings.append({"index": i, "time_s": float(t1 - t0)})
 
-    print(f"Generated {end - start} images to {out}")
+    # Save timings JSON
+    with (out / "timings.json").open("w") as f:
+        json.dump(timings, f, indent=2)
+
+    print(f"Generated {end - start} images to {out}. Timings saved to timings.json")
 
 
 if __name__ == "__main__":

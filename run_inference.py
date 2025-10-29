@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 import time
 import os
@@ -14,7 +14,6 @@ import torch.nn as nn
 import numpy as np
 from PIL import Image
 from datasets import load_dataset
-from diffusers import DiffusionPipeline, Transformer2DModel, PixArtSigmaPipeline
 from torchvision import transforms, models
 from scipy.linalg import sqrtm
 
@@ -109,6 +108,8 @@ class PixArtSigmaModel:
     def load(self) -> Any:
         print("Loading PixArt-Sigma model…")
         # Transformer weights
+        from diffusers import Transformer2DModel, PixArtSigmaPipeline
+
         transformer = Transformer2DModel.from_pretrained(
             "PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
             subfolder="transformer",
@@ -140,6 +141,8 @@ class SDXLModel:
 
     def load(self) -> Any:
         print("Loading SDXL model...")
+        from diffusers import DiffusionPipeline
+
         pipe = DiffusionPipeline.from_pretrained(
             "stabilityai/stable-diffusion-xl-base-1.0",
             torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
@@ -373,6 +376,17 @@ def run_benchmark_pixart(
 
     total_inference_time = time.time() - overall_start_time
     fid_score = calculate_fid(images, generated_images)
+
+    # Save per-image inference times alongside outputs for later analysis
+    import json as _json
+
+    timings_path = os.path.join(output_dir, "timings.json")
+    timings_payload = [
+        {"index": idx, "time_s": float(t)} for idx, t in enumerate(inference_times)
+    ]
+    with open(timings_path, "w") as f:
+        _json.dump(timings_payload, f, indent=2)
+    print(f"Saved per-image inference times to: {timings_path}")
 
     results = {
         "model_size": model.count_params(),

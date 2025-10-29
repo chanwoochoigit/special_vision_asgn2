@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PYTHON_BIN=${PYTHON_BIN:-python3}
+PYTHON_BIN=${PYTHON_BIN:-python}
 
 "$PYTHON_BIN" -m pip install -U pip wheel setuptools
 "$PYTHON_BIN" -m pip install -U torch torchvision

@@ -12,7 +12,8 @@ A minimalist, clean Python script to benchmark Stable Diffusion XL (SDXL) and th
 ## Installation
 
 ```bash
-pip install -r requirements.txt
+echo $CONDA_PREFIX
+"$CONDA_PREFIX/bin/python" -c "import sys,torch; print(sys.executable); print(torch.__version__)"
 ```
 
 **Note**: The VAR model must be properly installed. The script will fail if VAR dependencies are not available.
@@ -20,9 +21,21 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-# run inference first; this will generate outputs
-NUM_SAMPLES=100 SKIP_SDXL=1 SKIP_INFINITY=1 RUN_PIXART=1 python3 run_inference.py
+# verify dependencies in current env
+PYTHONNOUSERSITE=1 "$CONDA_PREFIX/bin/python" -m pip install --no-user -r requirements.txt
 
+# for Gundam
+PYTHONNOUSERSITE=1 NUM_SAMPLES=10000 SKIP_SDXL=1 RUN_PIXART=1 "$CONDA_PREFIX/bin/python" run_inference.py
+
+# for WikiARt
+# prepare inputs with metadata
+python scripts/pixart_scripts/wikiart/prepare_inputs_from_dataset.py --num_samples 2000 --seed 42
+# Build metadata with composed captions for train (and optionally test):
+python scripts/pixart_scripts/common/make_imagefolder_metadata.py --input_dir local_repo/WikiArt/input/train
+# Fine-tune
+bash scripts/pixart_scripts/wikiart/fine_tune_wikiart.sh
+# Inference using meta prompts:
+python scripts/pixart_scripts/wikiart/infer_finetuned_on_wikiart.py --use_meta --num_samples 100 --cfg 4.0
 ### unified bash script ###
 # backfill (get Gundam input data from generated outputs)
 # Generate metadata.jsonl to package it as PixArt input
@@ -33,7 +46,7 @@ NUM_SAMPLES=100 SKIP_SDXL=1 SKIP_INFINITY=1 RUN_PIXART=1 python3 run_inference.p
 # Launch LoRA training
 bash scripts/fine_tune_from_inference.sh
 # after training
-NUM_SAMPLES=1000 SKIP_SDXL=1 SKIP_INFINITY=1 RUN_PIXART=1 python3 run_inference.py
+NUM_SAMPLES=10000 SKIP_SDXL=1 SKIP_INFINITY=1 RUN_PIXART=1 python run_inference.py
 ```
 
 ## Output

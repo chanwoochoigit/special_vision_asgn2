@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 import argparse
 from pathlib import Path
 
@@ -22,12 +22,9 @@ def parse_args():
         default="Gazoche/gundam-captioned",
         help="Hugging Face dataset path to load images and captions from.",
     )
-    parser.add_argument(
-        "--split",
-        type=str,
-        default="train",
-        help="Dataset split to use.",
-    )
+    parser.add_argument("--split", type=str, default="train")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--train_ratio", type=float, default=0.9)
     parser.add_argument(
         "--image_size",
         type=int,
@@ -57,6 +54,7 @@ def main():
 
     print(f"Found {len(outputs)} output images. Loading dataset '{args.dataset}'…")
     ds = load_dataset(args.dataset, split=args.split)
+    ds = ds.shuffle(seed=args.seed)
     total = 0
     written = 0
 

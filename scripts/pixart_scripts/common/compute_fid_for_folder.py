@@ -1,6 +1,7 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 import argparse
 from pathlib import Path
+import json
 
 import numpy as np
 import torch
@@ -50,20 +51,20 @@ def calculate_fid(real_images, generated_images):
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Compute FID between a Gundam subset and a generated folder"
+        description="Compute FID between a dataset subset and a generated folder"
     )
-    p.add_argument(
-        "--generated_dir", type=str, required=True, help="Folder with generated images"
-    )
-    p.add_argument("--dataset", type=str, default="Gazoche/gundam-captioned")
+    p.add_argument("--generated_dir", type=str, required=True)
+    p.add_argument("--dataset", type=str, required=True)
     p.add_argument("--split", type=str, default="train")
+    p.add_argument("--start", type=int, default=0)
+    p.add_argument("--count", type=int, default=50)
     p.add_argument(
-        "--start",
-        type=int,
-        default=1028,
-        help="Start index in dataset (to match generated names)",
+        "--indices_file",
+        type=str,
+        default=None,
+        help="Optional file with newline-separated dataset indices to evaluate",
     )
-    p.add_argument("--count", type=int, default=50, help="How many images")
+    p.add_argument("--print_timing_stats", action="store_true")
     return p.parse_args()
 
 
@@ -73,12 +74,22 @@ def main():
     from datasets import load_dataset
 
     ds = load_dataset(args.dataset, split=args.split)
-    start = args.start
-    end = min(start + args.count, len(ds))
+    # choose indices
+    indices = []
+    if args.indices_file and Path(args.indices_file).exists():
+        indices = [
+            int(x.strip())
+            for x in Path(args.indices_file).read_text().splitlines()
+            if x.strip().isdigit()
+        ]
+    else:
+        start = args.start
+        end = min(start + args.count, len(ds))
+        indices = list(range(start, end))
 
     reals = []
     gens = []
-    for i in range(start, end):
+    for i in indices:
         gen_path = gen_dir / f"{i:05d}.png"
         if not gen_path.exists():
             continue
@@ -87,6 +98,19 @@ def main():
 
     fid = calculate_fid(reals, gens)
     print(f"FID: {fid:.4f} (n={len(gens)})")
+
+    if args.print_timing_stats:
+        tpath = gen_dir / "timings.json"
+        if tpath.exists():
+            with tpath.open("r") as f:
+                timings = json.load(f)
+            vals = [float(t.get("time_s", 0.0)) for t in timings]
+            import numpy as _np
+
+            if vals:
+                print(
+                    f"Timing stats (s) -> avg: {_np.mean(vals):.4f}, std: {_np.std(vals):.4f}, min: {min(vals):.4f}, max: {max(vals):.4f}"
+                )
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ set -euo pipefail
 
 for PKG in xformers flash-attn; do
   pip uninstall -y "$PKG" || true
-  python3 - << 'PY'
+  python - << 'PY'
 import site, sys, shutil, os
 pkgs = ["xformers", "flash_attn"]
 paths = set()
