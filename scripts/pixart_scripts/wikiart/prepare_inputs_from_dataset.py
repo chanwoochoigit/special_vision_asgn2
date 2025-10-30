@@ -38,39 +38,31 @@ def main():
     def write_split(split_ds, split_name):
         subdir = input_dir / split_name
         subdir.mkdir(parents=True, exist_ok=True)
+        artist_names = split_ds.features["artist"].names
+        style_names = split_ds.features["style"].names
+        genre_names = split_ds.features["genre"].names
+
         for i, rec in enumerate(split_ds):
             img = rec["image"].convert("RGB").resize((args.image_size, args.image_size))
-            # prefer text-like fields
-            cap = ""
-            for key in ["title", "genre", "style", args.caption_field]:
-                if key in rec and isinstance(rec[key], str) and rec[key].strip():
-                    cap = rec[key].strip()
-                    break
-            if not cap:
-                cap = str(rec.get(args.caption_field, "painting")).strip() or "painting"
+            caption_parts = []
+            artist_int = rec.get("artist")
+            if artist_int is not None:
+                artist_str = artist_names[artist_int]
+                caption_parts.append(f"Artist: {artist_str.replace('_', ' ')}")
+
+            style_int = rec.get("style")
+            if style_int is not None:
+                style_str = style_names[style_int]
+                caption_parts.append(f"Style: {style_str.replace('_', ' ')}")
+
+            genre_int = rec.get("genre")
+            if genre_int is not None:
+                genre_str = genre_names[genre_int]
+                caption_parts.append(f"Genre: {genre_str.replace('_', ' ')}")
+
+            cap = ", ".join(caption_parts)
             img.save(subdir / f"{i:05d}_input.png")
             (subdir / f"{i:05d}_caption.txt").write_text(cap)
-
-            # Save feature metadata for later use (artist/genre/style/etc.)
-            meta = {}
-            for k, v in rec.items():
-                if k == "image":
-                    continue
-                # Convert to basic python types where possible
-                if hasattr(v, "item"):
-                    v = v.item()
-
-                # stringify anything not JSON-serializable by default
-                try:
-                    import json as _json
-
-                    _json.dumps(v)
-                    meta[k] = v
-                except Exception:
-                    meta[k] = str(v)
-            (subdir / f"{i:05d}_meta.json").write_text(
-                __import__("json").dumps(meta, ensure_ascii=False, indent=2)
-            )
 
     write_split(train_ds, "train")
     write_split(test_ds, "test")

@@ -38,7 +38,7 @@ VALIDATION_PROMPT=${VALIDATION_PROMPT:-"a painting of a city street in impressio
 echo "[7/7] Validating LoRA and generating new inferences + FID ..."
 NEW_OUT_DIR=${NEW_OUT_DIR:-local_repo/WikiArt_ft/output_new}
 "$PYTHON_BIN" scripts/pixart_scripts/gundam/validate_finetune.py --base_combined "$COMBINED_BASE" --lora_dir "$OUTPUT_DIR" --out_dir "${NEW_OUT_DIR}/validation"
-"$PYTHON_BIN" scripts/pixart_scripts/wikiart/infer_finetuned_on_wikiart.py --base_combined "$COMBINED_BASE" --lora_dir "$OUTPUT_DIR" --out_dir "$NEW_OUT_DIR" --num_samples 200 --skip_first_n 0 --cfg 4.0 --use_meta
+"$PYTHON_BIN" scripts/pixart_scripts/wikiart/infer_finetuned_on_wikiart.py --base_combined "$COMBINED_BASE" --lora_dir "$OUTPUT_DIR" --out_dir "$NEW_OUT_DIR" --num_samples 200 --skip_first_n 0 --cfg 4.0
 "$PYTHON_BIN" scripts/pixart_scripts/common/compute_fid_for_folder.py --generated_dir "$NEW_OUT_DIR" --dataset huggan/wikiart --split train --start 0 --count 200 --print_timing_stats
 
 echo "Done. LoRA weights at: $OUTPUT_DIR"

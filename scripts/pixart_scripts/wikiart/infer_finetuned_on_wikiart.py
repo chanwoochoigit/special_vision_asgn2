@@ -30,12 +30,6 @@ def parse_args():
         "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
     )
     p.add_argument("--cfg", type=float, default=4.5)
-    p.add_argument("--prompt_field", type=str, default="style")
-    p.add_argument(
-        "--use_meta",
-        action="store_true",
-        help="Use saved meta.json to compose prompts if available",
-    )
     return p.parse_args()
 
 
@@ -58,35 +52,31 @@ def main():
     start = min(args.skip_first_n, len(ds))
     end = min(start + args.num_samples, len(ds))
 
+    artist_names = ds.features["artist"].names
+    style_names = ds.features["style"].names
+    genre_names = ds.features["genre"].names
+
     timings = []
     for i in range(start, end):
-        # Prefer meta.json composition if requested
-        cap = None
-        if args.use_meta:
-            meta_path = Path("local_repo/WikiArt/input/train") / f"{i:05d}_meta.json"
-            if meta_path.exists():
-                import json as _json
+        rec = ds[i]
+        caption_parts = []
 
-                meta = _json.loads(meta_path.read_text())
-                parts = []
-                title = str(meta.get("title", "")).strip()
-                style = str(meta.get("style", "")).strip()
-                genre = str(meta.get("genre", "")).strip()
-                artist = (
-                    str(meta.get("artist", "")).strip()
-                    or str(meta.get("artist_name", "")).strip()
-                )
-                if title:
-                    parts.append(title)
-                if style:
-                    parts.append(f"in {style} style")
-                if genre:
-                    parts.append(genre)
-                if artist:
-                    parts.append(f"by {artist}")
-                cap = ", ".join([p for p in parts if p]) or None
-        if not cap:
-            cap = str(ds[i].get(args.prompt_field, "")).strip() or "a painting"
+        artist_int = rec.get("artist")
+        if artist_int is not None:
+            artist_str = artist_names[artist_int]
+            caption_parts.append(f"Artist: {artist_str.replace('_', ' ')}")
+
+        style_int = rec.get("style")
+        if style_int is not None:
+            style_str = style_names[style_int]
+            caption_parts.append(f"Style: {style_str.replace('_', ' ')}")
+
+        genre_int = rec.get("genre")
+        if genre_int is not None:
+            genre_str = genre_names[genre_int]
+            caption_parts.append(f"Genre: {genre_str.replace('_', ' ')}")
+
+        cap = ", ".join(caption_parts)
         t0 = time.time()
         img = pipe(
             cap, height=512, width=512, num_inference_steps=20, guidance_scale=args.cfg
