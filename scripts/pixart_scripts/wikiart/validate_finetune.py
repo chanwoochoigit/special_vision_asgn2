@@ -20,19 +20,19 @@ def parse_args():
     p.add_argument(
         "--lora_dir",
         type=str,
-        default="PixArt-sigma/output/gundam_lora_512",
+        default="PixArt-sigma/output/wikiart_lora_512",
         help="Path to LoRA output directory",
     )
     p.add_argument(
         "--out_dir",
         type=str,
-        default="local_repo/PixArt_ft/validation",
+        default="local_repo/WikiArt_ft/validation",
         help="Directory to save validation image",
     )
     p.add_argument(
         "--prompt",
         type=str,
-        default="A realistic robot, humanoid, futuristic, pink and teal green",
+        default="Artist: berthe-morisot, Style: Impressionism, Genre: landscape",
         help="Validation prompt",
     )
     p.add_argument(

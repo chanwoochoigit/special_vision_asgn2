@@ -51,18 +51,19 @@ def calculate_fid(real_images, generated_images):
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Compute FID between a dataset subset and a generated folder"
+        description="Compute FID between a folder of real images and a folder of generated images"
     )
-    p.add_argument("--generated_dir", type=str, required=True)
-    p.add_argument("--dataset", type=str, required=True)
-    p.add_argument("--split", type=str, default="train")
-    p.add_argument("--start", type=int, default=0)
-    p.add_argument("--count", type=int, default=50)
     p.add_argument(
-        "--indices_file",
+        "--generated_dir",
         type=str,
-        default=None,
-        help="Optional file with newline-separated dataset indices to evaluate",
+        required=True,
+        help="Folder with generated images (e.g., 01800.png)",
+    )
+    p.add_argument(
+        "--real_dir",
+        type=str,
+        required=True,
+        help="Folder with corresponding real images (e.g., 01800_input.png)",
     )
     p.add_argument("--print_timing_stats", action="store_true")
     return p.parse_args()
@@ -71,30 +72,48 @@ def parse_args():
 def main():
     args = parse_args()
     gen_dir = Path(args.generated_dir)
-    from datasets import load_dataset
-
-    ds = load_dataset(args.dataset, split=args.split)
-    # choose indices
-    indices = []
-    if args.indices_file and Path(args.indices_file).exists():
-        indices = [
-            int(x.strip())
-            for x in Path(args.indices_file).read_text().splitlines()
-            if x.strip().isdigit()
-        ]
-    else:
-        start = args.start
-        end = min(start + args.count, len(ds))
-        indices = list(range(start, end))
+    real_dir = Path(args.real_dir)
 
     reals = []
     gens = []
-    for i in indices:
-        gen_path = gen_dir / f"{i:05d}.png"
-        if not gen_path.exists():
+
+    if not gen_dir.exists():
+        print(f"Error: Generated directory not found: {gen_dir}")
+        return
+    if not real_dir.exists():
+        print(f"Error: Real directory not found: {real_dir}")
+        return
+
+    # Find all generated images
+    generated_files = sorted(gen_dir.glob("*.png"))
+    if not generated_files:
+        print(f"No .png files found in {gen_dir}")
+        return
+
+    print(
+        f"Found {len(generated_files)} generated images. Matching with real images..."
+    )
+
+    # Loop over generated files and find their real counterparts
+    for gen_path in generated_files:
+        # e.g., "01800"
+        base_name = gen_path.stem
+        # e.g., "local_repo/WikiArt/input/test/01800_input.png"
+        real_path = real_dir / f"{base_name}_input.png"
+
+        if not real_path.exists():
+            print(
+                f"Warning: Skipping {gen_path.name}, corresponding real image not found at {real_path}"
+            )
             continue
+
+        # Load the pair
         gens.append(Image.open(gen_path).convert("RGB"))
-        reals.append(ds[i]["image"].convert("RGB"))
+        reals.append(Image.open(real_path).convert("RGB"))
+
+    if not gens:
+        print("No matching image pairs were found.")
+        return
 
     fid = calculate_fid(reals, gens)
     print(f"FID: {fid:.4f} (n={len(gens)})")

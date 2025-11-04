@@ -35,14 +35,14 @@ def main():
     train_ds = ds.select(range(n_train))
     test_ds = ds.select(range(n_train, n_total))
 
-    def write_split(split_ds, split_name):
+    def write_split(split_ds, split_name, start_index=0):
         subdir = input_dir / split_name
         subdir.mkdir(parents=True, exist_ok=True)
         artist_names = split_ds.features["artist"].names
         style_names = split_ds.features["style"].names
         genre_names = split_ds.features["genre"].names
 
-        for i, rec in enumerate(split_ds):
+        for i, rec in enumerate(split_ds, start=start_index):
             img = rec["image"].convert("RGB").resize((args.image_size, args.image_size))
             caption_parts = []
             artist_int = rec.get("artist")
@@ -64,8 +64,8 @@ def main():
             img.save(subdir / f"{i:05d}_input.png")
             (subdir / f"{i:05d}_caption.txt").write_text(cap)
 
-    write_split(train_ds, "train")
-    write_split(test_ds, "test")
+    write_split(train_ds, "train", start_index=0)
+    write_split(test_ds, "test", start_index=len(train_ds))
 
     print(
         f"Prepared {len(train_ds)} train and {len(test_ds)} test inputs in {input_dir}"

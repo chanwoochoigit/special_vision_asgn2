@@ -6,10 +6,20 @@ import json
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Create metadata.jsonl for HF imagefolder from {index}_input + {index}_caption pairs"
+        description="Create metadata.jsonl for HF imagefolder from PixArt/input pairs"
     )
-    p.add_argument("--input_dir", type=str, required=True)
-    p.add_argument("--metadata_name", type=str, default="metadata.jsonl")
+    p.add_argument(
+        "--input_dir",
+        type=str,
+        default="local_repo/PixArt/input/train",
+        help="Folder containing {index}_input.(png|jpg|jpeg|webp) and {index}_caption.txt",
+    )
+    p.add_argument(
+        "--metadata_name",
+        type=str,
+        default="metadata.jsonl",
+        help="Output metadata filename (written into input_dir)",
+    )
     return p.parse_args()
 
 
@@ -19,34 +29,32 @@ def main():
     in_dir.mkdir(parents=True, exist_ok=True)
     meta_path = in_dir / args.metadata_name
 
-    records = []
+    captions = {}
+    for cap in in_dir.glob("*_caption.txt"):
+        stem = cap.stem
+        idx = stem.split("_caption")[0]
+        try:
+            int(idx)
+        except ValueError:
+            continue
+        captions[idx] = cap.read_text(encoding="utf-8", errors="ignore").strip()
+    candidates = {}
     for ext in (".png", ".jpg", ".jpeg", ".webp"):
-        for img_path in in_dir.glob(f"*{ext}"):
-            stem = img_path.stem
-            txt_path = img_path.with_suffix(".txt")
-
-            cap = ""
-            if txt_path.exists():
-                cap = txt_path.read_text(encoding="utf-8", errors="ignore").strip()
-
-            # Ensure the filename stem is a parsable integer (like '00000')
+        for img in in_dir.glob(f"*_input{ext}"):
+            stem = img.stem
+            idx = stem.split("_input")[0]
             try:
-                int(stem)
-                records.append({"file_name": img_path.name, "text": cap, "stem": stem})
+                int(idx)
             except ValueError:
-                # Not an image with an integer stem, skip it
-                print(f"Skipping non-standard file: {img_path.name}")
                 continue
-
-    # Sort records numerically by the stem (e.g., '00000', '00001', ...)
-    records.sort(key=lambda r: int(r["stem"]))
-
+            candidates[idx] = img.name
     count = 0
     with meta_path.open("w", encoding="utf-8") as f:
-        for rec in records:
-            # Write the final record without the temporary 'stem' key
-            final_rec = {"file_name": rec["file_name"], "text": rec["text"]}
-            f.write(json.dumps(final_rec, ensure_ascii=False) + "\n")
+        for idx in sorted(candidates.keys(), key=lambda x: int(x)):
+            img_name = candidates[idx]
+            cap = captions.get(idx, "")
+            rec = {"file_name": img_name, "text": cap}
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             count += 1
 
     print(f"Wrote {count} records to {meta_path}")

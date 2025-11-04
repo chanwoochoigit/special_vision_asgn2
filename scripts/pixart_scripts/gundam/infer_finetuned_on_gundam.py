@@ -11,7 +11,7 @@ from peft import PeftModel
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Inference with WikiArt LoRA using existing caption files"
+        description="Inference with Gundam LoRA using existing caption files"
     )
     p.add_argument(
         "--base_combined",
@@ -19,15 +19,15 @@ def parse_args():
         default="PixArt-sigma/output/pretrained_models/pixart_sigma_combined",
     )
     p.add_argument(
-        "--lora_dir", type=str, default="PixArt-sigma/output/wikiart_lora_512"
+        "--lora_dir", type=str, default="PixArt-sigma/output/gundam_lora_512"
     )
     p.add_argument(
         "--input_dir",
         type=str,
-        default="local_repo/WikiArt/input/test",
+        default="local_repo/PixArt/input/test",
         help="Directory containing the _caption.txt files",
     )
-    p.add_argument("--out_dir", type=str, default="local_repo/WikiArt_ft/output")
+    p.add_argument("--out_dir", type=str, default="local_repo/PixArt_ft/output")
     p.add_argument(
         "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
     )

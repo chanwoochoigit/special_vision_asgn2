@@ -4,15 +4,15 @@ set -euo pipefail
 export PYTHONNOUSERSITE=1
 PYTHON_BIN=${PYTHON_BIN:-python}
 
-BASE_DIR=${BASE_DIR:-local_repo/PixArt/input/train}
-OUT_DIR=${OUT_DIR:-PixArt-sigma/output/gundam_lora_512}
+BASE_DIR=${BASE_DIR:-local_repo/WikiArt/input/train}
+OUT_DIR=${OUT_DIR:-PixArt-sigma/output/wikiart_lora_512}
 BASE_COMBINED=${BASE_COMBINED:-PixArt-sigma/output/pretrained_models/pixart_sigma_combined}
 PORT=${PORT:-12345}
 BS=${BS:-2}
 STEPS=${STEPS:-3000}
 LR=${LR:-5e-5}
 RANK=${RANK:-32}
-VALIDATION_PROMPT=${VALIDATION_PROMPT:-"A robot, humanoid, futuristic, pink and teal green"}
+VALIDATION_PROMPT=${VALIDATION_PROMPT:-"Artist: berthe-morisot, Style: Impressionism, Genre: landscape"}
 
 "$PYTHON_BIN" scripts/pixart_scripts/common/make_imagefolder_metadata.py --input_dir "$BASE_DIR"
 "$PYTHON_BIN" -m torch.distributed.run --nproc_per_node=1 --master_port="$PORT" \

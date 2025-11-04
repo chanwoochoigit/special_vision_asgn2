@@ -5,29 +5,31 @@ import time
 import json
 
 import torch
-from diffusers import DiffusionPipeline, Transformer2DModel
-from peft import PeftModel
+from diffusers import DiffusionPipeline
 
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Inference with WikiArt LoRA using existing caption files"
+        description="Inference with a BASE PixArt model using existing caption files"
     )
     p.add_argument(
-        "--base_combined",
+        "--base_model",
         type=str,
         default="PixArt-sigma/output/pretrained_models/pixart_sigma_combined",
-    )
-    p.add_argument(
-        "--lora_dir", type=str, default="PixArt-sigma/output/wikiart_lora_512"
+        help="Path or Hub ID of the base PixArt model",
     )
     p.add_argument(
         "--input_dir",
         type=str,
-        default="local_repo/WikiArt/input/test",
+        default="local_repo/PixArt/input/test",
         help="Directory containing the _caption.txt files",
     )
-    p.add_argument("--out_dir", type=str, default="local_repo/WikiArt_ft/output")
+    p.add_argument(
+        "--out_dir",
+        type=str,
+        default="local_repo/PixArt/output",
+        help="Directory to save generated images",
+    )
     p.add_argument(
         "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
     )
@@ -39,20 +41,18 @@ def main():
     args = parse_args()
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
+
     input_path = Path(args.input_dir)
     if not input_path.exists():
         print(f"Error: Input directory not found: {input_path}")
         return
 
     dtype = torch.float16 if args.device.startswith("cuda") else torch.float32
-    transformer = Transformer2DModel.from_pretrained(
-        args.base_combined, subfolder="transformer", torch_dtype=dtype
-    )
-    transformer = PeftModel.from_pretrained(transformer, args.lora_dir)
-    pipe = DiffusionPipeline.from_pretrained(
-        args.base_combined, transformer=transformer, torch_dtype=dtype
-    )
+
+    print(f"Loading base model from {args.base_model}...")
+    pipe = DiffusionPipeline.from_pretrained(args.base_model, torch_dtype=dtype)
     pipe = pipe.to(args.device)
+    print("Model loaded.")
 
     # Find all caption files in the input directory and sort them
     caption_files = sorted(input_path.glob("*_caption.txt"))
