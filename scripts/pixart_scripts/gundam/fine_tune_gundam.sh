@@ -26,48 +26,48 @@ LR=${LR:-1e-4}
 RANK=${RANK:-8}
 VALIDATION_PROMPT=${VALIDATION_PROMPT:-"A robot, humanoid, futuristic, pink and white"}
 
-# echo "[1/6] Backfilling inputs from Gundam dataset to match generated outputs..."
-# "$PYTHON_BIN" scripts/pixart_scripts/gundam/prepare_inputs_from_dataset.py --base_dir "$BASE_PIXART" --dataset Gazoche/gundam-captioned --split train --image_size 512
+echo "[1/6] Backfilling inputs from Gundam dataset to match generated outputs..."
+"$PYTHON_BIN" scripts/pixart_scripts/gundam/prepare_inputs_from_dataset.py --base_dir "$BASE_PIXART" --dataset Gazoche/gundam-captioned --split train --image_size 512
 
-# echo "[2/6] Generating metadata.jsonl in $INPUT_DIR ..."
-# "$PYTHON_BIN" scripts/pixart_scripts/common/make_imagefolder_metadata.py --input_dir "$INPUT_DIR"
+echo "[2/6] Generating metadata.jsonl in $INPUT_DIR ..."
+"$PYTHON_BIN" scripts/pixart_scripts/common/make_imagefolder_metadata.py --input_dir "$INPUT_DIR"
 
-# echo "[3/6] Cleaning conflicting packages (xformers/flash-attn) ..."
-# bash scripts/pixart_scripts/gundam/clean_conflicting_pkgs.sh
+echo "[3/6] Cleaning conflicting packages (xformers/flash-attn) ..."
+bash scripts/pixart_scripts/gundam/clean_conflicting_pkgs.sh
 
-# echo "[4/6] Installing training dependencies ..."
-# bash scripts/pixart_scripts/gundam/install_training_deps.sh
+echo "[4/6] Installing training dependencies ..."
+bash scripts/pixart_scripts/gundam/install_training_deps.sh
 
-# echo "[4.5/6] Verifying training environment ..."
-# "$PYTHON_BIN" - << 'PY'
-# import importlib
-# mods = ["torch","diffusers","transformers","accelerate","datasets","peft"]
-# ok=True
-# for m in mods:
-#     try:
-#         mod=importlib.import_module(m)
-#         v=getattr(mod,'__version__','?')
-#         print(f"OK {m}: {v}")
-#     except Exception as e:
-#         ok=False
-#         print(f"FAIL {m}: {e}")
-# raise SystemExit(0 if ok else 1)
-# PY
+echo "[4.5/6] Verifying training environment ..."
+"$PYTHON_BIN" - << 'PY'
+import importlib
+mods = ["torch","diffusers","transformers","accelerate","datasets","peft"]
+ok=True
+for m in mods:
+    try:
+        mod=importlib.import_module(m)
+        v=getattr(mod,'__version__','?')
+        print(f"OK {m}: {v}")
+    except Exception as e:
+        ok=False
+        print(f"FAIL {m}: {e}")
+raise SystemExit(0 if ok else 1)
+PY
 
-# echo "[5/6] Building combined PixArt base at $COMBINED_BASE ..."
-# "$PYTHON_BIN" scripts/pixart_scripts/common/build_pixart_combined_base.py --out_dir "$COMBINED_BASE"
+echo "[5/6] Building combined PixArt base at $COMBINED_BASE ..."
+"$PYTHON_BIN" scripts/pixart_scripts/common/build_pixart_combined_base.py --out_dir "$COMBINED_BASE"
 
-# echo "[6/6] Launching LoRA training from $INPUT_DIR ..."
-# PYTHON_BIN="$PYTHON_BIN" BASE_DIR="$INPUT_DIR" OUT_DIR="$OUTPUT_DIR" BASE_COMBINED="$COMBINED_BASE" PORT="$PORT" BS="$BS" STEPS="$STEPS" LR="$LR" RANK="$RANK" \
-#   VALIDATION_PROMPT="$VALIDATION_PROMPT" bash scripts/pixart_scripts/gundam/train_pixart_lora_from_inputs.sh
+echo "[6/6] Launching LoRA training from $INPUT_DIR ..."
+PYTHON_BIN="$PYTHON_BIN" BASE_DIR="$INPUT_DIR" OUT_DIR="$OUTPUT_DIR" BASE_COMBINED="$COMBINED_BASE" PORT="$PORT" BS="$BS" STEPS="$STEPS" LR="$LR" RANK="$RANK" \
+  VALIDATION_PROMPT="$VALIDATION_PROMPT" bash scripts/pixart_scripts/gundam/train_pixart_lora_from_inputs.sh
 
-# echo "[6.5/6] Inferring with raw model ..."
-# "$PYTHON_BIN" scripts/pixart_scripts/gundam/infer_raw_model.py --input_dir "$RAW_INPUT_DIR" --out_dir "$RAW_OUT_DIR" --cfg 4.0
+echo "[6.5/6] Inferring with raw model ..."
+"$PYTHON_BIN" scripts/pixart_scripts/gundam/infer_raw_model.py --input_dir "$RAW_INPUT_DIR" --out_dir "$RAW_OUT_DIR" --cfg 4.0
 
 
 echo "[7/7] Validating LoRA and generating new inferences + FID ..."
 NEW_OUT_DIR=${NEW_OUT_DIR:-local_repo/PixArt_ft/output}
 "$PYTHON_BIN" scripts/pixart_scripts/gundam/validate_finetune.py --base_combined "$COMBINED_BASE" --lora_dir "$OUTPUT_DIR" --out_dir "${NEW_OUT_DIR}/validation"
 "$PYTHON_BIN" scripts/pixart_scripts/gundam/infer_finetuned_on_gundam.py --base_combined "$COMBINED_BASE" --lora_dir "$OUTPUT_DIR" --out_dir "$NEW_OUT_DIR" --cfg 4.0
-bash scripts/pixart_scripts/gundam/compute_fid_gundam.sh
+bash scripts/pixart_scripts/gundam/compute_metrics_gundam.sh
 

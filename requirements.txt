@@ -27,3 +27,6 @@ peft
 # High-performance attention (optional; leave unpinned)
 # xformers
 # flash-attn
+
+lpips
+scikit-image

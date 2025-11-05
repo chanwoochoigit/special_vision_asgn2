@@ -4,54 +4,17 @@ from pathlib import Path
 import json
 
 import numpy as np
-import torch
-import torch.nn as nn
 from PIL import Image
-from torchvision import transforms, models
-from scipy.linalg import sqrtm
+from skimage.metrics import structural_similarity as ssim
 
+from loguru import logger
 
-def get_inception_features(images):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    inception = models.inception_v3(
-        weights=models.Inception_V3_Weights.DEFAULT, transform_input=False
-    )
-    inception.fc = nn.Identity()
-    inception = inception.to(device).eval()
-    transform = transforms.Compose(
-        [
-            transforms.Resize((299, 299)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
-    feats = []
-    with torch.no_grad():
-        for img in images:
-            t = transform(img).unsqueeze(0).to(device)
-            feat = inception(t).cpu().numpy()
-            feats.append(feat)
-    return np.vstack(feats)
-
-
-def calculate_fid(real_images, generated_images):
-    real_features = get_inception_features(real_images)
-    gen_features = get_inception_features(generated_images)
-    mu_real, sigma_real = real_features.mean(axis=0), np.cov(
-        real_features, rowvar=False
-    )
-    mu_gen, sigma_gen = gen_features.mean(axis=0), np.cov(gen_features, rowvar=False)
-    diff = mu_real - mu_gen
-    covmean = sqrtm(sigma_real.dot(sigma_gen))
-    if np.iscomplexobj(covmean):
-        covmean = covmean.real
-    fid = float(diff.dot(diff) + np.trace(sigma_real + sigma_gen - 2 * covmean))
-    return fid
+logger.add("logs/metrics.log")
 
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Compute FID between a folder of real images and a folder of generated images"
+        description="Compute SSIM between a folder of real images and a folder of generated images"
     )
     p.add_argument(
         "--generated_dir",
@@ -65,8 +28,46 @@ def parse_args():
         required=True,
         help="Folder with corresponding real images (e.g., 01800_input.png)",
     )
+    p.add_argument(
+        "--data_range",
+        type=float,
+        default=255.0,
+        help="Data range of the input image (default: 255.0 for [0,255] uint8 images)",
+    )
     p.add_argument("--print_timing_stats", action="store_true")
     return p.parse_args()
+
+
+def load_image_as_array(image_path):
+    """Load image and convert to numpy array"""
+    img = Image.open(image_path).convert("RGB")
+    return np.array(img)
+
+
+def compute_ssim_for_images(real_paths, generated_paths, data_range=255.0):
+    """Compute SSIM for pairs of images"""
+    ssim_values = []
+
+    for real_path, gen_path in zip(real_paths, generated_paths):
+        # Load images as numpy arrays
+        real_img = load_image_as_array(real_path)
+        gen_img = load_image_as_array(gen_path)
+
+        # Ensure same size (resize gen to match real if needed)
+        if real_img.shape != gen_img.shape:
+            gen_img_pil = Image.fromarray(gen_img)
+            real_img_pil = Image.fromarray(real_img)
+            gen_img_pil = gen_img_pil.resize(
+                real_img_pil.size, Image.Resampling.LANCZOS
+            )
+            gen_img = np.array(gen_img_pil)
+
+        # Compute SSIM for RGB images (channel_axis=2 for HxWx3 format)
+        ssim_value = ssim(real_img, gen_img, data_range=data_range, channel_axis=2)
+
+        ssim_values.append(ssim_value)
+
+    return ssim_values
 
 
 def main():
@@ -74,8 +75,8 @@ def main():
     gen_dir = Path(args.generated_dir)
     real_dir = Path(args.real_dir)
 
-    reals = []
-    gens = []
+    real_paths = []
+    gen_paths = []
 
     if not gen_dir.exists():
         print(f"Error: Generated directory not found: {gen_dir}")
@@ -107,16 +108,19 @@ def main():
             )
             continue
 
-        # Load the pair
-        gens.append(Image.open(gen_path).convert("RGB"))
-        reals.append(Image.open(real_path).convert("RGB"))
+        gen_paths.append(gen_path)
+        real_paths.append(real_path)
 
-    if not gens:
+    if not gen_paths:
         print("No matching image pairs were found.")
         return
 
-    fid = calculate_fid(reals, gens)
-    print(f"FID: {fid:.4f} (n={len(gens)})")
+    ssim_values = compute_ssim_for_images(
+        real_paths, gen_paths, data_range=args.data_range
+    )
+
+    avg_ssim = sum(ssim_values) / len(ssim_values)
+    logger.info(f"SSIM: {avg_ssim:.4f} (n={len(ssim_values)})")
 
     if args.print_timing_stats:
         tpath = gen_dir / "timings.json"
@@ -127,7 +131,7 @@ def main():
             import numpy as _np
 
             if vals:
-                print(
+                logger.info(
                     f"Timing stats (s) -> avg: {_np.mean(vals):.4f}, std: {_np.std(vals):.4f}, min: {min(vals):.4f}, max: {max(vals):.4f}"
                 )
 
